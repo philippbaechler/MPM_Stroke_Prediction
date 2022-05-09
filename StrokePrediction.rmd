@@ -1,0 +1,358 @@
+---
+title: "MPM-Project"
+author: "Lorenz Isenegger, Philipp Bächler"
+date: '2022-04-27'
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+library(magrittr)
+```
+
+
+\newpage
+# Load the data
+
+Monitoring health data is getting very popular nowadays. With the help of smart watches and other wearable devices collecting and generating data is easier than ever and will likely keep evolving. An useful application would be, if we can predict certain illnesses and diseases - before these have a severe impact on the patient. We have decided to work on a data set, which holds data from patients which have had an stroke and control data from patients which have not had an stroke. Our goal would be to learn how to prepare such a data set, train different models make predictions with these and compare the outcomes.
+
+The data set is from kaggle: https://www.kaggle.com/datasets/fedesoriano/stroke-prediction-dataset
+
+```{r}
+d.stroke <- read.csv("healthcare-dataset-stroke-data.csv", header=TRUE, stringsAsFactors=TRUE)
+str(d.stroke)
+```
+
+
+If we compare the number of stroke occurrences and the number of observations we see that the data set is unbalanced. Only about 4.2% of all observations have a positive stroke outcome. If we would implement a model which returns always a negative answer (e.g. no stroke), our model would have an accuracy of 95.7%. However, the difficult and valuable task of such a problem is to predict the cases, where the patient will possibly have a stroke.
+
+```{r}
+nrow(d.stroke)
+prop.table(table(d.stroke$stroke))
+str(d.stroke$stroke)
+```
+
+
+```{r, fig.height=3}
+barplot(c(sum(d.stroke$stroke==0), sum(d.stroke$stroke==1)), names.arg=c("!stroke", "stroke"), main="Compare Groups 'stroke' and '!stroke'")
+# d.stroke %>%
+#   filter(.,sum(stroke == 0)) %>%
+#   ggplot() +
+#   geom_bar()
+
+ggplot(data = d.stroke, aes(x = factor(stroke))) +
+  geom_bar() +
+  labs(x="stroke or !stroke", y = "n")
+  
+  
+```
+
+
+# Data Cleaning
+
+```{r}
+summary(d.stroke)
+```
+
+
+The variable **id** does not add any value to our models. So it is useless information and can be neglected.
+```{r}
+d.stroke <- subset(d.stroke, select=-id)
+```
+
+
+All variable names are written in lowercase except **Residence_type**. Let us keep the convention and rename this variable.
+```{r}
+d.stroke <- d.stroke %>% 
+  rename(residence_type = Residence_type)
+```
+
+
+Checking the gender categories reveals three factors: Female, Male and Other. As there is only one observation with the factor **Other**, we should simplify our model and remove this observation. As this is a medical data set, the biological gender is higher vlaued than the identified gender. this by all means should not be taken as offense against non-binary people. 
+```{r}
+d.stroke <- d.stroke[c(d.stroke$gender != "Other"),]
+```
+
+
+We have only missing values for the variable **bmi**. As we have only 201 missing values compared to total 5110 observations it would be reasonable to drop these observations.
+```{r}
+mean(as.numeric(as.character(d.stroke$bmi)), na.rm = TRUE)
+
+d.stroke <- d.stroke[d.stroke$bmi != "N/A",]
+```
+
+
+The remaining values for variable **bmi** are initially interpreted as factors. Let us change these to numeric values.
+```{r}
+d.stroke$bmi <- as.numeric(levels(d.stroke$bmi))[d.stroke$bmi]
+```
+
+
+```{r}
+summary(d.stroke)
+```
+
+```{r, fig.show="hold", out.width="50%"}
+hist(d.stroke$bmi, main="Histogram of BMI")
+d.stroke$bmi_norm <- log(d.stroke$bmi)/max(log(d.stroke$bmi))
+hist(d.stroke$bmi_norm, main="Histogram of log(BMI)")
+```
+
+```{r, fig.show="hold", out.width="50%"}
+hist(d.stroke$age)
+d.stroke$age_norm <- d.stroke$age/max(d.stroke$age)
+hist(d.stroke$age_norm)
+```
+
+```{r, fig.show="hold", out.width="50%"}
+hist(d.stroke$avg_glucose_level)
+d.stroke$avg_glucose_level_norm <- d.stroke$avg_glucose_level/max(d.stroke$avg_glucose_level)
+hist(d.stroke$avg_glucose_level_norm)
+```
+
+Datatypes:
+```{r}
+#d.stroke$gender <- as.factor(d.stroke$gender)
+#d.stroke$hypertension <- as.factor(d.stroke$hypertension)
+#d.stroke$heart_disease <- as.factor(d.stroke$heart_disease)
+#d.stroke$ever_married <- as.factor(d.stroke$ever_married)
+#d.stroke$work_type <- as.factor(d.stroke$work_type)
+#d.stroke$residence_type <- as.factor(d.stroke$residence_type)
+#d.stroke$smoking_status <- as.factor(d.stroke$smoking_status)
+d.stroke$stroke <- as.factor(d.stroke$stroke)
+str(d.stroke)
+```
+
+\newpage
+# Graphical Analysis
+```{r}
+qplot(y = bmi, x = age,
+      data = d.stroke,
+      facets = ~ gender,
+      col = as.factor(stroke))
+```
+
+```{r}
+boxplot(age ~ stroke, data = d.stroke,
+        main = "Influence of Age on Stroke Probability",
+        ylab = "age")
+```
+
+```{r}
+boxplot(avg_glucose_level ~ stroke, data = d.stroke,
+        main = "Influence of Glucose Level on Stroke Probability",
+        ylab = "avg_glucose_level")
+```
+
+```{r}
+boxplot(bmi ~ stroke, data = d.stroke,
+        main = "Influence of BMI on Stroke Probability",
+        ylab = "bmi")
+```
+
+```{r}
+boxplot(age ~ smoking_status, data = d.stroke,
+        main = "Age vs. Smoking Status",
+        ylab = "age")
+```
+
+
+```{r}
+plot(d.stroke$bmi_norm, d.stroke$avg_glucose_level_norm, col="cornflowerblue", pch=20)
+points(d.stroke$bmi_norm[d.stroke$stroke==1], d.stroke$avg_glucose_level_norm[d.stroke$stroke==1], col="firebrick", pch=20)
+```
+
+
+\newpage
+# Train / Test / Validation Split
+As we have an unbalanced data set, we must first apply some balancing algorithm. For a first approach, oversampling should be sufficient. However, to make sure, that we do not induce any errors with the oversampling algorithm, the first thing we should do is to split off some validation data. After this, oversampling can be applied to the remaining data set. For training the model, we can split now the over-sampled set into training an testing data. 
+
+1. Split data into training and validation set (train:90% / valid:10%)
+2. Apply Oversampling to the training data set
+3. Split training data set into training and testing set (train:80% / test:20%)
+
+```{r}
+table(d.stroke$stroke)
+```
+
+
+## Validation Split
+```{r}
+set.seed(42)
+split1<- sample(c(rep(0, 0.9 * nrow(d.stroke)), rep(1, 0.1 * nrow(d.stroke))))
+table(split1)
+```
+
+```{r}
+d.train <- d.stroke[split1 == 0, ]
+d.valid <- d.stroke[split1== 1, ]
+dim(d.train)
+dim(d.valid)
+```
+
+
+## Oversampling
+```{r}
+#install.packages("ROSE")
+library(ROSE)
+```
+
+```{r}
+table(d.train$stroke)
+```
+
+```{r}
+set.seed(42)
+d.train <- ovun.sample(stroke ~ ., data=d.train, method="over", N=2*4233)$data
+table(d.train$stroke)
+```
+
+```{r}
+str(d.train)
+```
+
+
+## Train / Test Split
+```{r}
+set.seed(42)
+split2<- sample(c(rep(0, 0.8 * nrow(d.train)), rep(1, 0.2 * nrow(d.train))))
+d.test <- d.train[split2== 1, ]
+d.train <- d.train[split2 == 0, ]
+dim(d.train)
+dim(d.test)
+```
+
+
+\newpage
+# 1. Linear Model
+
+```{r}
+#d.lm <- lm(stroke ~ gender + age + avg_glucose_level + log(bmi), data=d.train)
+#summary(d.lm)
+```
+
+```{r}
+#d.lm <- lm(stroke ~ age + gender * age, data=d.train, )
+#summary(d.lm)
+```
+
+```{r}
+#d.lm <- lm(stroke ~ . - id, data=d.train, )
+#summary(d.lm)
+```
+
+```{r}
+#confint(d.lm)
+```
+
+
+\newpage
+# 2. Generalised Linear Model with family set to Poisson
+
+
+\newpage
+# 3. Generalised Linear Model with family set to Binomial
+
+
+```{r}
+d.glm <- glm(stroke ~ ., data=d.train, family="binomial")
+summary(d.glm)
+```
+
+```{r}
+d.glm <- glm(stroke ~ bmi_norm + age_norm + avg_glucose_level_norm , data=d.train, family="binomial")
+summary(d.glm)
+```
+
+```{r}
+head(predict(d.glm, d.test))
+```
+
+
+
+\newpage
+# 4. Generalised Additive Model
+
+
+\newpage
+# 5. Support Vector Machine
+
+```{r}
+library(e1071)
+library(caret)
+```
+
+
+```{r}
+set.seed(42)
+d.svm <- svm(stroke ~ . - avg_glucose_level - bmi - age, data=d.train, kernel = "linear", type="C-classification", cost = 10)
+summary(d.svm)
+```
+
+
+```{r}
+test_pred <- predict(d.svm, d.test)
+table(test_pred, d.test$stroke)
+```
+
+```{r}
+valid_pred <- predict(d.svm, d.valid)
+table(valid_pred, d.valid$stroke)
+```
+
+
+
+\newpage
+# 6. Neural Network
+```{r}
+library(nnet)
+```
+
+```{r, results=FALSE}
+set.seed(42)
+d.net <- nnet(stroke ~ ., data = d.train, size=20, maxit=10000, rang=0.1, decay=5e-3, MaxNWts = 20000)
+d.net
+```
+
+```{r}
+pred <- predict(d.net, d.test, type="class")
+cm_nn <- table(pred=pred, true=d.test$stroke)
+cm_nn
+```
+
+```{r}
+pred <- predict(d.net, d.valid, type="class")
+cm_nn <- table(pred=pred, true=d.valid$stroke)
+cm_nn
+```
+
+```{r}
+conf_matrix <- confusionMatrix(as.factor(pred), d.valid$stroke, positive="1")
+conf_matrix
+```
+
+
+\newpage
+# 7. Optimisation Problem
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
