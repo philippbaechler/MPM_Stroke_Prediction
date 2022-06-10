@@ -358,7 +358,51 @@ conf_matrix
 
 
 \newpage
-# 7. Optimisation Problem
+# 7. Cross Validation on Neural Network
+
+```{r, echo=FALSE}
+sens.nnet.10 <- c()
+sens.nnet.20 <- c()
+
+set.seed(42)
+for(i in 1:2){
+  
+  ## 1) Create train test split
+  split1 <- sample(c(rep(0, 0.8 * nrow(d.stroke)), rep(1, 0.1 * nrow(d.stroke))))
+  data.train <- d.stroke[split1 == 0, ]
+  data.test <- d.stroke[split1== 1, ]
+  
+  ## 2) Apply oversampling
+  data.train <- ovun.sample(stroke ~ ., data=data.train, method="over", N=2*nrow(data.train))$data
+  
+  ## 3) Train neuronal network
+  model.nnet.10 <- nnet(stroke ~ ., data = data.train, size=10, maxit=10000, rang=0.1, decay=5e-3, MaxNWts = 20000, trace=FALSE)
+  model.nnet.20 <- nnet(stroke ~ ., data = data.train, size=20, maxit=10000, rang=0.1, decay=5e-3, MaxNWts = 20000, trace=FALSE)
+  
+  ## 4) Prediction on test data
+  model.nnet.10.pred <- predict(model.nnet.10, data.test, type="class")
+  model.nnet.20.pred <- predict(model.nnet.20, data.test, type="class")
+  
+  ## 5) Evaluation
+  conf_matrix <- confusionMatrix(as.factor(model.nnet.10.pred), data.test$stroke, positive="1")
+  sens.nnet.10[i] <- conf_matrix$byClass["Sensitivity"]
+  
+  conf_matrix <- confusionMatrix(as.factor(model.nnet.20.pred), data.test$stroke, positive="1")
+  sens.nnet.20[i] <- conf_matrix$byClass["Sensitivity"]
+}
+```
+
+
+```{r}
+sens.nnet.10
+```
+
+```{r}
+sens.nnet.20
+```
+
+\newpage
+# 8. Optimisation Problem
 
 
 
