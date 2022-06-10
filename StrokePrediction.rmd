@@ -13,6 +13,7 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
+library(tidyr)
 library(ggplot2)
 library(magrittr)
 ```
@@ -75,24 +76,36 @@ d.stroke <- d.stroke %>%
 ```
 
 
-Checking the gender categories reveals three factors: Female, Male and Other. As there is only one observation with the factor **Other**, we should simplify our model and remove this observation. As this is a medical data set, the biological gender is higher vlaued than the identified gender. this by all means should not be taken as offense against non-binary people. 
+Checking the gender categories reveals three factors: Female, Male and Other. As there is only one observation with the factor **Other**, we should simplify our model and remove this observation. As this is a medical data set, the biological gender is higher valued than the identified gender. this by all means should not be taken as offense against non-binary people. 
 ```{r}
 d.stroke <- d.stroke[c(d.stroke$gender != "Other"),]
 ```
 
+The values for variable **bmi** are initially interpreted as factors. Let us change these to numeric values.
+```{r, warning=FALSE}
+# d.stroke$bmi <- as.numeric(levels(d.stroke$bmi))[d.stroke$bmi]
+
+d.stroke <- d.stroke %>%
+  group_by(bmi) %>%
+  mutate(bmi = as.numeric(levels(bmi))[bmi]) 
+```
 
 We have only missing values for the variable **bmi**. As we have only 201 missing values compared to total 5110 observations it would be reasonable to drop these observations.
 ```{r}
-mean(as.numeric(as.character(d.stroke$bmi)), na.rm = TRUE)
+# mean(as.numeric(as.character(d.stroke$bmi)), na.rm = TRUE)
 
-d.stroke <- d.stroke[d.stroke$bmi != "N/A",]
+d.stroke <- d.stroke %>%
+  drop_na()
 ```
 
-
-The remaining values for variable **bmi** are initially interpreted as factors. Let us change these to numeric values.
+The variable **age** can be interpreted as count variable, at least from values of age > 2. Values < 2 are represented as decimal fractions. this contradicts the majority of rows, so we cater for this with coercing these ages to integers of value 0, 1, or 2
 ```{r}
-d.stroke$bmi <- as.numeric(levels(d.stroke$bmi))[d.stroke$bmi]
+d.stroke <- d.stroke %>%
+  mutate(age.int = as.integer(age)) %>%
+  select(., -age)
 ```
+
+
 
 
 ```{r}
@@ -106,8 +119,8 @@ hist(d.stroke$bmi_norm, main="Histogram of log(BMI)")
 ```
 
 ```{r, fig.show="hold", out.width="50%"}
-hist(d.stroke$age)
-d.stroke$age_norm <- d.stroke$age/max(d.stroke$age)
+hist(d.stroke$age.int)
+d.stroke$age_norm <- d.stroke$age.int/max(d.stroke$age.int)
 hist(d.stroke$age_norm)
 ```
 
@@ -133,14 +146,14 @@ str(d.stroke)
 \newpage
 # Graphical Analysis
 ```{r}
-qplot(y = bmi, x = age,
+qplot(y = bmi, x = age.int,
       data = d.stroke,
       facets = ~ gender,
       col = as.factor(stroke))
 ```
 
 ```{r}
-boxplot(age ~ stroke, data = d.stroke,
+boxplot(age.int ~ stroke, data = d.stroke,
         main = "Influence of Age on Stroke Probability",
         ylab = "age")
 ```
@@ -158,7 +171,7 @@ boxplot(bmi ~ stroke, data = d.stroke,
 ```
 
 ```{r}
-boxplot(age ~ smoking_status, data = d.stroke,
+boxplot(age.int ~ smoking_status, data = d.stroke,
         main = "Age vs. Smoking Status",
         ylab = "age")
 ```
@@ -186,7 +199,7 @@ table(d.stroke$stroke)
 ## Validation Split
 ```{r}
 set.seed(42)
-split1<- sample(c(rep(0, 0.9 * nrow(d.stroke)), rep(1, 0.1 * nrow(d.stroke))))
+split1<- sample(c(rep(0, round(0.9 * nrow(d.stroke))), rep(1, round(0.1 * nrow(d.stroke)))))
 table(split1)
 ```
 
@@ -234,12 +247,12 @@ dim(d.test)
 # 1. Linear Model
 
 ```{r}
-#d.lm <- lm(stroke ~ gender + age + avg_glucose_level + log(bmi), data=d.train)
+#d.lm <- lm(stroke ~ gender + age.int + avg_glucose_level + log(bmi), data=d.train)
 #summary(d.lm)
 ```
 
 ```{r}
-#d.lm <- lm(stroke ~ age + gender * age, data=d.train, )
+#d.lm <- lm(stroke ~ age.int + gender * age.int, data=d.train, )
 #summary(d.lm)
 ```
 
@@ -256,18 +269,59 @@ dim(d.test)
 \newpage
 # 2. Generalised Linear Model with family set to Poisson.
 GLM with Poisson family does not make sense on our Stroke prediction, as Poisson distribution is used for modeling Count data response variable.Stroke is binary data, so Poisson distribution does not work.
-Therefore we use a glm with a binomial distribution to fit the data, as described in the next section.
+Therefore we use a glm with a binomial distribution to fit stroke, as described in the next section.
 
+To fit a glm with poisson distribution we need count data. The only count data variable in the data is 'age' > 2.0. Children aged < 2 are represented by decimal fractionals.. then we fit a glm with Poisson distribution with response variable age. 
 
+```{r}
+
+d.glm.pois <- glm(age.int ~ .-bmi-avg_glucose_level, data=d.train, family="poisson")
+summary(d.glm.pois)
+```
+Now we see that the dispersion parameter is set to 1 because the use of the Poisson family. However, the Residual deviance differs greatly from the degrees of freedom (df) of the model. this counts as underdisperson, or rather lower increase in variance of the count data than anticipated with the use of a poisson distribution. 
+We can account for this whit the use of a Quasipoisson distribution in the glm family
+
+```{r}
+# glm wiht Quasipoisson distribution 
+d.glm.pois <- glm(age.int ~ .-bmi-avg_glucose_level, data=d.train, family="quasipoisson")
+summary(d.glm.pois)
+```
+The Dispersion factor is now taken to be 0.336 instead of 1. This leads to some change in the p-values of the predictors. Indeed, The predictor 'hypertension' now is considered significant (although not highly) according to its p-value, whereas before it was not considered significant. 
+Even more so 'heart_disease' becomes now highly significant. 
+similarly the 'smoking_status' predictor gains significance, especially on the levels 'smokes' and 'Unknown'. 
+Also 'bmi' in it's non-normalized form gets highly significant, but that was expected before through the use of the balanced normalized 'bmi_norm' predictor 
+
+```{r}
+pred.glm.pois <- predict(d.glm.pois, d.test)
+plot(pred.glm.pois, d.test$age.int)
+abline(range(pred.glm.pois))
+```
 
 \newpage
 # 3. Generalised Linear Model with family set to Binomial
 
+As described before, if stroke prediction is the goal of the modelling, a glm with the binomial distribution has to be used. 
+aagain, we exclude any correlated variables, such as 'bmi' and 'avg_glucose_level' and rather use the normalized varesions of these.
 
 ```{r}
-d.glm <- glm(stroke ~ ., data=d.train, family="binomial")
-summary(d.glm)
+d.glm.bin <- glm(stroke ~ .-bmi-avg_glucose_level, data=d.train, family="binomial")
+summary(d.glm.bin)
 ```
+The model sees again significant contributions from 'hypertension', 'work_type', 'smoking_status' as well as the 'avg_glucose_level_norm' variables. 
+Note that the stroke prediction has a much lower Residual Deviance than the age prediction whit the poisson distribution used before. However, still a small underdispersion is notable.
+
+```{r}
+d.glm.bin <- glm(stroke ~ .-age.int-bmi-avg_glucose_level, data=d.train, family="quasibinomial")
+summary(d.glm.bin)
+```
+
+Now on to the prediction. 
+```{r}
+pred.glm.bin <- predict(d.glm.bin, d.test)
+plot(pred.glm.bin, d.test$stroke)
+```
+
+
 
 ```{r}
 d.glm <- glm(stroke ~ bmi_norm + age_norm + avg_glucose_level_norm , data=d.train, family="binomial")
@@ -275,28 +329,33 @@ summary(d.glm)
 ```
 
 ```{r}
-head(predict(d.glm, d.test))
+pred.glm.bin <- predict(d.glm, d.test)
+plot(pred.glm.bin, d.test$stroke)
 ```
 
 
 
 \newpage
 # 4. Generalised Additive Model
+
+Now a GAM model should be fit on stroke. again, the family has tp be specified as 'binomial' or 'quasi-binomial', as the response variable is binary data
 ```{r}
 library("mgcv")
 
-# ggplot 
-# d.train %>%
-#   ggplot(mapping = aes(y = stroke,
-#                      x = bmi)) +
-# geom_point() +
-# geom_smooth()
+d.gam <- d.train %$%
+  gam(stroke ~ age_norm + hypertension + heart_disease + ever_married +work_type +residence_type + avg_glucose_level_norm +bmi_norm + smoking_status, family = "binomial")
 
-# d.gam <- d.train %>%
-#   gam(data = ., stroke ~ bmi_norm + avg_glucose_level_norm)
-# 
-# d.gam
+d.gam
 
+# summary(d.gam)
+
+```
+The GAM model advices 
+
+```{r}
+pred.gam.bin <- predict(d.gam, d.test)
+plot(pred.gam.bin, d.test$stroke)
+table(pred.gam.bin, d.test$stroke)
 ```
 
 \newpage
@@ -310,7 +369,7 @@ library(caret)
 
 ```{r}
 set.seed(42)
-d.svm <- svm(stroke ~ . - avg_glucose_level - bmi - age, data=d.train, kernel = "linear", type="C-classification", cost = 10)
+d.svm <- svm(stroke ~ . - avg_glucose_level - bmi, data=d.train, kernel = "linear", type="C-classification", cost = 10)
 summary(d.svm)
 ```
 
