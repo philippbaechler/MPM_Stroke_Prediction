@@ -339,6 +339,8 @@ conf_matrix
 library(nnet)
 ```
 
+The neuronal network which we have trained consists of an input layer with 16 nodes, one single hidden layer with 20 nodes and an output layer with a single node. This leads to a total of 361 weights. Also on this model we make use of the previously normalized variables avg_glucose_level, bmi, age. The parameters were chosen by trial and error to achieve the best result. We will later in this chapter see, that this values might be improved and in chapter 7, we will compare different models. The parameter *size* correspondents to the number of nodes which are in the single hidden layer. The parameter *maxit* is the number of iterations after which the algorithm will stop to train unless it converged before.
+
 
 ```{r, results=FALSE}
 set.seed(42)
@@ -346,17 +348,23 @@ d.net <- nnet(stroke ~ . - avg_glucose_level - bmi - age, data = d.train, size=2
 d.net
 ```
 
+If we evaluate the model with the test set, we can predict 100% of the true positive "stroke". This would mean that the specificity for this model would be 100%, which seems to be almost impossible. This might be the result of leaking test data into the train data set and chances of over fitting are high.
+
 ```{r}
 pred <- predict(d.net, d.test, type="class")
 cm_nn <- table(pred=pred, true=d.test$stroke)
 cm_nn
 ```
 
+If we evaluate the model with the validation set, we can see, that the model is not as near as good, as we expected. Only 10 out of 28 positive cases were predicted correctly. This huge difference between the test and validation outcome might be the result of overfitting the model. It might be that with the 20 nodes in the hidden layer the 361 weights, we have too many parameters to describe the model.
+
 ```{r}
 pred <- predict(d.net, d.valid, type="class")
 cm_nn <- table(pred=pred, true=d.valid$stroke)
 cm_nn
 ```
+
+The confusion matrix gives us more information. The accuracy lays at 86.9% and is slightly better than the result of the previously trained SVM. However, if we compare the sensitivity, which is more relevant for this project, we only receive 41.7% which is a much worse than the result of the SVM. This might be the result of over fitting the model.
 
 ```{r}
 conf_matrix <- confusionMatrix(as.factor(pred), d.valid$stroke, positive="1")
@@ -366,6 +374,8 @@ conf_matrix
 
 \newpage
 # 7. Cross Validation on SVM and Neural Network
+
+To be sure which model is better suited for predicting the strokes we have implemented a cross validation. We create a test/train split randomly, train and evaluate the models on these data sets and compare the sensitivities. This should answer if we had just luck or bad luck with the models trained in chapter 6 and 7.
 
 ```{r, echo=FALSE}
 sens.svm.lin <- c()
@@ -421,10 +431,9 @@ sens.nnet.10
 sens.nnet.15
 ```
 
-
-
-
-
+```{r}
+boxplot(sens.svm.lin, sens.svm.rad, sens.nnet.10, sens.nnet.15, names=c("svm.lin", "svm.rad", "nnet.10", "nnet.15"))
+```
 
 
 
