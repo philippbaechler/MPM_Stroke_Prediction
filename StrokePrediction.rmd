@@ -254,7 +254,10 @@ dim(d.test)
 
 
 \newpage
-# 2. Generalised Linear Model with family set to Poisson
+# 2. Generalised Linear Model with family set to Poisson.
+GLM with Poisson family does not make sense on our Stroke prediction, as Poisson distribution is used for modeling Count data response variable.Stroke is binary data, so Poisson distribution does not work.
+Therefore we use a glm with a binomial distribution to fit the data, as described in the next section.
+
 
 
 \newpage
@@ -279,7 +282,22 @@ head(predict(d.glm, d.test))
 
 \newpage
 # 4. Generalised Additive Model
+```{r}
+library("mgcv")
 
+# ggplot 
+# d.train %>%
+#   ggplot(mapping = aes(y = stroke,
+#                      x = bmi)) +
+# geom_point() +
+# geom_smooth()
+
+# d.gam <- d.train %>%
+#   gam(data = ., stroke ~ bmi_norm + avg_glucose_level_norm)
+# 
+# d.gam
+
+```
 
 \newpage
 # 5. Support Vector Machine
