@@ -431,6 +431,7 @@ conf_matrix
 ```
 
 
+
 \newpage
 # 7. Cross Validation on SVM and Neural Network
 
@@ -454,12 +455,12 @@ for(i in 1:3){
   data.train <- ovun.sample(stroke ~ ., data=data.train, method="over", N=2*nrow(data.train))$data
   
   ## 3) Train SVM
-  model.svm.lin <- svm(stroke ~ . - avg_glucose_level - bmi - age, data=d.train, kernel = "linear", type="C-classification", cost = 5)
-  model.svm.rad <- svm(stroke ~ . - avg_glucose_level - bmi - age, data=d.train, kernel = "radial", type="C-classification", cost = 5)
+  model.svm.lin <- svm(stroke ~ . - avg_glucose_level - bmi - age.int, data=d.train, kernel = "linear", type="C-classification", cost = 5)
+  model.svm.rad <- svm(stroke ~ . - avg_glucose_level - bmi - age.int, data=d.train, kernel = "radial", type="C-classification", cost = 5)
   
   ## 3) Train neuronal network
-  model.nnet.10 <- nnet(stroke ~ . - avg_glucose_level - bmi - age, data = data.train, size=10, maxit=10000, rang=0.1, decay=5e-3, MaxNWts = 20000, trace=FALSE)
-  model.nnet.15 <- nnet(stroke ~ . - avg_glucose_level - bmi - age, data = data.train, size=15, maxit=10000, rang=0.1, decay=5e-3, MaxNWts = 20000, trace=FALSE)
+  model.nnet.10 <- nnet(stroke ~ . - avg_glucose_level - bmi - age.int, data = data.train, size=10, maxit=10000, rang=0.1, decay=5e-3, MaxNWts = 20000, trace=FALSE)
+  model.nnet.15 <- nnet(stroke ~ . - avg_glucose_level - bmi - age.int, data = data.train, size=15, maxit=10000, rang=0.1, decay=5e-3, MaxNWts = 20000, trace=FALSE)
   
   ## 4) Prediction on test data
   model.svm.lin.pred <- predict(model.svm.lin, data.test, type="class")
@@ -493,6 +494,10 @@ sens.nnet.15
 ```{r}
 boxplot(sens.svm.lin, sens.svm.rad, sens.nnet.10, sens.nnet.15, names=c("svm.lin", "svm.rad", "nnet.10", "nnet.15"))
 ```
+
+
+
+
 
 
 
